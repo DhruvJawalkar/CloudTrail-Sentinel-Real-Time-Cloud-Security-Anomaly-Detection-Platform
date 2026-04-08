@@ -43,6 +43,11 @@ class AlertRepository:
                     reasons_json TEXT NOT NULL,
                     recommended_actions_json TEXT NOT NULL,
                     feature_context_json TEXT NOT NULL DEFAULT '{}',
+                    detection_sources_json TEXT NOT NULL DEFAULT '[]',
+                    ml_anomaly_score REAL,
+                    ml_confidence REAL,
+                    model_version TEXT,
+                    ml_top_contributors_json TEXT NOT NULL DEFAULT '[]',
                     event_json TEXT NOT NULL
                 )
                 """
@@ -58,6 +63,41 @@ class AlertRepository:
                     ADD COLUMN feature_context_json TEXT NOT NULL DEFAULT '{}'
                     """
                 )
+            if "detection_sources_json" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE alerts
+                    ADD COLUMN detection_sources_json TEXT NOT NULL DEFAULT '[]'
+                    """
+                )
+            if "ml_anomaly_score" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE alerts
+                    ADD COLUMN ml_anomaly_score REAL
+                    """
+                )
+            if "ml_confidence" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE alerts
+                    ADD COLUMN ml_confidence REAL
+                    """
+                )
+            if "model_version" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE alerts
+                    ADD COLUMN model_version TEXT
+                    """
+                )
+            if "ml_top_contributors_json" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE alerts
+                    ADD COLUMN ml_top_contributors_json TEXT NOT NULL DEFAULT '[]'
+                    """
+                )
 
     def create_alert(self, payload: AlertCreate) -> Alert:
         alert = Alert(
@@ -71,6 +111,11 @@ class AlertRepository:
             reasons=payload.reasons,
             recommended_actions=payload.recommended_actions,
             feature_context=payload.feature_context,
+            detection_sources=payload.detection_sources,
+            ml_anomaly_score=payload.ml_anomaly_score,
+            ml_confidence=payload.ml_confidence,
+            model_version=payload.model_version,
+            ml_top_contributors=payload.ml_top_contributors,
             event=payload.event,
         )
         with self._connect() as connection:
@@ -79,9 +124,11 @@ class AlertRepository:
                 INSERT INTO alerts (
                     alert_id, created_at, severity, title, description,
                     anomaly_score, confidence, reasons_json,
-                    recommended_actions_json, feature_context_json, event_json
+                    recommended_actions_json, feature_context_json,
+                    detection_sources_json, ml_anomaly_score, ml_confidence,
+                    model_version, ml_top_contributors_json, event_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     alert.alert_id,
@@ -94,6 +141,11 @@ class AlertRepository:
                     json.dumps(alert.reasons),
                     json.dumps(alert.recommended_actions),
                     json.dumps(alert.feature_context),
+                    json.dumps(alert.detection_sources),
+                    alert.ml_anomaly_score,
+                    alert.ml_confidence,
+                    alert.model_version,
+                    json.dumps(alert.ml_top_contributors),
                     alert.event.model_dump_json(),
                 ),
             )
@@ -135,5 +187,10 @@ class AlertRepository:
             reasons=json.loads(row["reasons_json"]),
             recommended_actions=json.loads(row["recommended_actions_json"]),
             feature_context=json.loads(row["feature_context_json"] or "{}"),
+            detection_sources=json.loads(row["detection_sources_json"] or "[]"),
+            ml_anomaly_score=row["ml_anomaly_score"],
+            ml_confidence=row["ml_confidence"],
+            model_version=row["model_version"],
+            ml_top_contributors=json.loads(row["ml_top_contributors_json"] or "[]"),
             event=json.loads(row["event_json"]),
         )

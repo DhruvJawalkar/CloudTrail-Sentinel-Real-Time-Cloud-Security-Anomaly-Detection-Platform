@@ -8,8 +8,13 @@ import requests
 from kafka import KafkaConsumer
 
 from feature_store.redis_store import RedisFeatureStore
-from shared.config import ALERT_API_BASE_URL, KAFKA_BOOTSTRAP_SERVERS, RAW_EVENTS_TOPIC
-from shared.models import SecurityEvent
+from shared.config import (
+    ALERT_API_BASE_URL,
+    KAFKA_BOOTSTRAP_SERVERS,
+    MODEL_API_BASE_URL,
+    RAW_EVENTS_TOPIC,
+)
+from shared.models import ModelScore, SecurityEvent
 from stream_processor.detector import RulesEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -32,7 +37,8 @@ def main() -> None:
         try:
             event = SecurityEvent.model_validate(record.value)
             features = feature_store.ingest_event(event)
-            alerts = rules_engine.evaluate(event, features)
+            model_score = _score_event(features)
+            alerts = rules_engine.evaluate(event, features, model_score)
             for alert in alerts:
                 response = requests.post(
                     f"{ALERT_API_BASE_URL}/alerts",
@@ -51,6 +57,20 @@ def main() -> None:
             time.sleep(1)
         except Exception as exc:
             LOGGER.exception("Failed to process event: %s", exc)
+
+
+def _score_event(features) -> ModelScore:
+    try:
+        response = requests.post(
+            f"{MODEL_API_BASE_URL}/score",
+            json=features.model_dump(mode="json"),
+            timeout=5,
+        )
+        response.raise_for_status()
+        return ModelScore.model_validate(response.json())
+    except requests.RequestException as exc:
+        LOGGER.warning("Model service unavailable, proceeding with rules only: %s", exc)
+        return ModelScore()
 
 
 if __name__ == "__main__":

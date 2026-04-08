@@ -20,6 +20,13 @@
 - Serve the model through FastAPI or embedded inference.
 - Blend ML score with rule outputs.
 
+## Implemented Phase 3 Core
+
+- Offline synthetic feature dataset generation.
+- Isolation Forest training artifact generation.
+- FastAPI model-serving endpoint for online scoring.
+- Hybrid rule plus ML detection with alert metadata.
+
 ## Planned Phase 4
 
 - Add schema validation, dead-letter handling, retries, metrics, and alert suppression.

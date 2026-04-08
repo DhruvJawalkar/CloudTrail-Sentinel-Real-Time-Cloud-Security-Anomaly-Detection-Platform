@@ -49,6 +49,14 @@ class FeatureSnapshot(BaseModel):
     is_new_ip_for_user: bool = False
 
 
+class ModelScore(BaseModel):
+    anomaly_score: float = 0.0
+    confidence: float = 0.0
+    predicted_anomaly: bool = False
+    model_version: str = "unavailable"
+    top_contributors: list[str] = Field(default_factory=list)
+
+
 class Alert(BaseModel):
     alert_id: str
     created_at: datetime
@@ -60,6 +68,11 @@ class Alert(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
     feature_context: dict[str, Any] = Field(default_factory=dict)
+    detection_sources: list[str] = Field(default_factory=list)
+    ml_anomaly_score: float | None = None
+    ml_confidence: float | None = None
+    model_version: str | None = None
+    ml_top_contributors: list[str] = Field(default_factory=list)
     event: SecurityEvent
 
 
@@ -72,4 +85,9 @@ class AlertCreate(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
     feature_context: dict[str, Any] = Field(default_factory=dict)
+    detection_sources: list[str] = Field(default_factory=list)
+    ml_anomaly_score: float | None = None
+    ml_confidence: float | None = None
+    model_version: str | None = None
+    ml_top_contributors: list[str] = Field(default_factory=list)
     event: SecurityEvent

@@ -4,16 +4,18 @@ CloudTrail Sentinel is a production-style cloud security anomaly detection platf
 
 ## Current status
 
-This repository now implements **Phase 1 MVP** and the core of **Phase 2 rolling features** from the phased plan:
+This repository now implements **Phase 1 MVP**, **Phase 2 rolling features**, and the core of **Phase 3 hybrid ML scoring** from the phased plan:
 
 - event generator with baseline and attack-like scenarios
 - Kafka-compatible event ingestion with Redpanda
 - Redis-backed rolling feature computation
 - rules-based stream processing using online features
+- offline Isolation Forest training pipeline
+- FastAPI-based model serving for online scoring
 - FastAPI alert persistence and retrieval
 - Streamlit analyst dashboard
 
-The repo structure also reserves the seams for Phases 3 and 4:
+The repo structure also reserves the seams for the rest of Phase 3 and Phase 4:
 
 - Parquet or Delta offline feature storage
 - Isolation Forest-based anomaly scoring
@@ -25,7 +27,9 @@ The repo structure also reserves the seams for Phases 3 and 4:
 producer -> Redpanda/Kafka -> stream_processor -> FastAPI API -> Streamlit dashboard
                              |                 |
                              -> Redis          -> SQLite alert store
-                             -> future: ML model service + Parquet/Delta
+                             -> model_serving
+
+batch path: simulator/features -> model_training -> Isolation Forest artifact -> model_serving
 ```
 
 More detail lives in `docs/architecture.md`.
@@ -49,9 +53,9 @@ Core event fields are defined in `shared/models.py` and include:
 - `bytes_received`
 - `is_privileged_action`
 
-## Detection logic in Phase 2
+## Detection logic in Phase 3
 
-The platform uses a deterministic rules engine in `stream_processor/detector.py` plus Redis-backed rolling features to detect:
+The platform uses a deterministic rules engine in `stream_processor/detector.py`, Redis-backed rolling features, and an Isolation Forest model served through `model_serving` to detect:
 
 - failed login bursts
 - privileged actions from unseen countries
@@ -78,6 +82,8 @@ Each alert includes:
 - reasons
 - recommended actions
 - feature context
+- detection sources
+- ML anomaly score and model version
 - full triggering event payload
 
 ## Local run
@@ -122,7 +128,19 @@ python -m stream_processor.app
 python -m producer.app
 ```
 
-6. Run the dashboard:
+6. Train the model:
+
+```bash
+python -m model_training.train
+```
+
+7. Run the model service:
+
+```bash
+uvicorn model_serving.app:app --reload --port 8010
+```
+
+8. Run the dashboard:
 
 ```bash
 streamlit run dashboard/app.py
@@ -136,8 +154,8 @@ dashboard/           Streamlit analyst UI
 docs/                Architecture and design notes
 feature_store/       Redis-backed online feature logic
 infra/               Infrastructure notes and future deployment assets
-model_serving/       Placeholder for online anomaly model serving
-model_training/      Placeholder for offline model training jobs
+model_serving/       Online anomaly model serving
+model_training/      Offline dataset generation and model training
 producer/            Simulated cloud event producer
 shared/              Shared schema and configuration
 stream_processor/    Streaming rules engine
@@ -147,11 +165,11 @@ requirements.txt     Python dependencies
 
 ## Planned next phases
 
-### Phase 3: ML Detection
+### Phase 3 Next
 
 - persist historical training data in Parquet or Delta
-- train an Isolation Forest model offline
-- add ML scoring service and combine it with rules
+- add richer model evaluation and version promotion workflow
+- introduce SHAP-like explanation or better feature attribution
 
 ### Phase 4: Production Hardening
 

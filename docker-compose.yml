@@ -31,6 +31,13 @@ services:
     ports:
       - "8000:8000"
 
+  model_serving:
+    build:
+      context: .
+      dockerfile: model_serving/Dockerfile
+    ports:
+      - "8010:8010"
+
   stream_processor:
     build:
       context: .
@@ -39,10 +46,12 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       RAW_EVENTS_TOPIC: cloud-security-events
       ALERT_API_BASE_URL: http://api:8000
+      MODEL_API_BASE_URL: http://model_serving:8010
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
     depends_on:
+      - model_serving
       - redis
       - redpanda
       - api

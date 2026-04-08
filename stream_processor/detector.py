@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from shared.models import AlertCreate, FeatureSnapshot, SecurityEvent
+from shared.models import AlertCreate, FeatureSnapshot, ModelScore, SecurityEvent
 
 
 class RulesEngine:
@@ -8,18 +8,26 @@ class RulesEngine:
         self,
         event: SecurityEvent,
         features: FeatureSnapshot,
+        model_score: ModelScore,
     ) -> list[AlertCreate]:
         alerts: list[AlertCreate] = []
-        alerts.extend(self._failed_auth_burst(event, features))
-        alerts.extend(self._privileged_new_country(event, features))
-        alerts.extend(self._deletion_spike(event, features))
-        alerts.extend(self._high_volume_transfer(event, features))
-        return alerts
+        alerts.extend(self._failed_auth_burst(event, features, model_score))
+        alerts.extend(self._privileged_new_country(event, features, model_score))
+        alerts.extend(self._deletion_spike(event, features, model_score))
+        alerts.extend(self._high_volume_transfer(event, features, model_score))
+        if not alerts:
+            ml_alert = self._ml_behavioral_anomaly(event, features, model_score)
+            if ml_alert is not None:
+                alerts.append(ml_alert)
+            return alerts
+
+        return [self._enrich_with_model_context(alert, model_score) for alert in alerts]
 
     def _failed_auth_burst(
         self,
         event: SecurityEvent,
         features: FeatureSnapshot,
+        model_score: ModelScore,
     ) -> list[AlertCreate]:
         if event.api_action != "ConsoleLogin" or event.auth_result != "failure":
             return []
@@ -44,6 +52,7 @@ class RulesEngine:
                     "Require MFA re-authentication",
                 ],
                 feature_context=features.model_dump(mode="json"),
+                detection_sources=["rule"],
                 event=event,
             )
         ]
@@ -52,6 +61,7 @@ class RulesEngine:
         self,
         event: SecurityEvent,
         features: FeatureSnapshot,
+        model_score: ModelScore,
     ) -> list[AlertCreate]:
         if event.is_privileged_action and features.is_new_country_for_user:
             return [
@@ -72,6 +82,7 @@ class RulesEngine:
                         "Correlate with device and VPN logs",
                     ],
                     feature_context=features.model_dump(mode="json"),
+                    detection_sources=["rule"],
                     event=event,
                 )
             ]
@@ -81,6 +92,7 @@ class RulesEngine:
         self,
         event: SecurityEvent,
         features: FeatureSnapshot,
+        model_score: ModelScore,
     ) -> list[AlertCreate]:
         if "Delete" not in event.api_action and "Terminate" not in event.api_action:
             return []
@@ -105,6 +117,7 @@ class RulesEngine:
                     "Pause destructive automation until triage completes",
                 ],
                 feature_context=features.model_dump(mode="json"),
+                detection_sources=["rule"],
                 event=event,
             )
         ]
@@ -113,6 +126,7 @@ class RulesEngine:
         self,
         event: SecurityEvent,
         features: FeatureSnapshot,
+        model_score: ModelScore,
     ) -> list[AlertCreate]:
         if event.bytes_received < 2_000_000:
             return []
@@ -133,6 +147,65 @@ class RulesEngine:
                     "Review the affected bucket or dataset",
                 ],
                 feature_context=features.model_dump(mode="json"),
+                detection_sources=["rule"],
                 event=event,
             )
         ]
+
+    def _ml_behavioral_anomaly(
+        self,
+        event: SecurityEvent,
+        features: FeatureSnapshot,
+        model_score: ModelScore,
+    ) -> AlertCreate | None:
+        if not model_score.predicted_anomaly or model_score.anomaly_score < 0.82:
+            return None
+
+        severity = "high" if model_score.anomaly_score >= 0.92 else "medium"
+        reasons = [
+            f"Isolation Forest anomaly score: {model_score.anomaly_score}",
+            f"Top contributors: {', '.join(model_score.top_contributors)}",
+        ]
+        if features.is_new_country_for_user:
+            reasons.append(f"New country observed for user: {event.geo_country}")
+        if features.is_new_ip_for_user:
+            reasons.append(f"New IP observed for user: {event.source_ip}")
+
+        return AlertCreate(
+            severity=severity,
+            title="Behavioral anomaly detected by ML model",
+            description="The event deviated materially from the learned behavioral baseline.",
+            anomaly_score=model_score.anomaly_score,
+            confidence=model_score.confidence,
+            reasons=reasons,
+            recommended_actions=[
+                "Review the feature snapshot and recent user activity",
+                "Correlate the alert with recent authentication and resource access patterns",
+            ],
+            feature_context=features.model_dump(mode="json"),
+            detection_sources=["ml"],
+            ml_anomaly_score=model_score.anomaly_score,
+            ml_confidence=model_score.confidence,
+            model_version=model_score.model_version,
+            ml_top_contributors=model_score.top_contributors,
+            event=event,
+        )
+
+    def _enrich_with_model_context(
+        self,
+        alert: AlertCreate,
+        model_score: ModelScore,
+    ) -> AlertCreate:
+        sources = list(alert.detection_sources)
+        if model_score.predicted_anomaly:
+            sources.append("ml")
+            if model_score.top_contributors:
+                alert.reasons.append(
+                    f"ML contributors: {', '.join(model_score.top_contributors)}"
+                )
+        alert.detection_sources = sources
+        alert.ml_anomaly_score = model_score.anomaly_score
+        alert.ml_confidence = model_score.confidence
+        alert.model_version = model_score.model_version
+        alert.ml_top_contributors = model_score.top_contributors
+        return alert

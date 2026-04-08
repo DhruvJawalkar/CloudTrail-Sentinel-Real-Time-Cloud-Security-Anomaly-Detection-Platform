@@ -6,6 +6,7 @@ import os
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
 RAW_EVENTS_TOPIC = os.getenv("RAW_EVENTS_TOPIC", "cloud-security-events")
 ALERT_API_BASE_URL = os.getenv("ALERT_API_BASE_URL", "http://api:8000")
+MODEL_API_BASE_URL = os.getenv("MODEL_API_BASE_URL", "http://model_serving:8010")
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))

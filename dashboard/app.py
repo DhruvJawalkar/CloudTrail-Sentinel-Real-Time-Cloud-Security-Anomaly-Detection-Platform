@@ -36,6 +36,8 @@ df = pd.DataFrame(
             "service": alert["event"]["service_name"],
             "action": alert["event"]["api_action"],
             "score": alert["anomaly_score"],
+            "ml_score": alert.get("ml_anomaly_score"),
+            "sources": ",".join(alert.get("detection_sources", [])),
             "failed_logins_5m": alert.get("feature_context", {}).get("failed_logins_5m", 0),
             "distinct_countries_24h": alert.get("feature_context", {}).get(
                 "distinct_countries_24h", 0
@@ -65,6 +67,15 @@ st.markdown(f"**Description:** {selected_alert['description']}")
 st.markdown(f"**Reasons:** {', '.join(selected_alert['reasons'])}")
 st.markdown(
     f"**Recommended actions:** {', '.join(selected_alert['recommended_actions'])}"
+)
+st.markdown(
+    f"**Detection sources:** {', '.join(selected_alert.get('detection_sources', [])) or 'n/a'}"
+)
+st.markdown(f"**ML anomaly score:** {selected_alert.get('ml_anomaly_score', 'n/a')}")
+st.markdown(f"**ML confidence:** {selected_alert.get('ml_confidence', 'n/a')}")
+st.markdown(f"**Model version:** {selected_alert.get('model_version', 'n/a')}")
+st.markdown(
+    f"**Top ML contributors:** {', '.join(selected_alert.get('ml_top_contributors', [])) or 'n/a'}"
 )
 st.markdown("**Feature context:**")
 st.json(selected_alert.get("feature_context", {}))

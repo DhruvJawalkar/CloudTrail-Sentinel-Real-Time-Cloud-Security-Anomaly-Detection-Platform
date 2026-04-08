@@ -1,0 +1,71 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      SQLITE_DB_PATH: data/alerts.db
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+
+  stream_processor:
+    build:
+      context: .
+      dockerfile: stream_processor/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      RAW_EVENTS_TOPIC: cloud-security-events
+      ALERT_API_BASE_URL: http://api:8000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    depends_on:
+      - redis
+      - redpanda
+      - api
+
+  producer:
+    build:
+      context: .
+      dockerfile: producer/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      RAW_EVENTS_TOPIC: cloud-security-events
+      EVENT_GENERATION_RATE: 8
+      EVENT_GENERATION_BURST_PROBABILITY: 0.08
+    depends_on:
+      - redpanda
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"

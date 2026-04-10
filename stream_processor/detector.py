@@ -19,8 +19,6 @@ class RulesEngine:
             ml_alert = self._ml_behavioral_anomaly(event, features, model_score)
             if ml_alert is not None:
                 alerts.append(ml_alert)
-            return alerts
-
         return [self._enrich_with_model_context(alert, model_score) for alert in alerts]
 
     def _failed_auth_burst(
@@ -39,8 +37,8 @@ class RulesEngine:
                 severity="high",
                 title="Failed login burst detected",
                 description="Multiple failed console login attempts observed in a short window.",
-                anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else min(0.99, 0.5 + features.failed_logins_5m * 0.08),
-                confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.86,
+                anomaly_score=min(0.99, 0.5 + features.failed_logins_5m * 0.08),
+                confidence=0.86,
                 reasons=[
                     f"{features.failed_logins_5m} failed console logins in the last 5 minutes",
                     f"Source country {event.geo_country}",
@@ -53,6 +51,7 @@ class RulesEngine:
                 ],
                 feature_context=features.model_dump(mode="json"),
                 detection_sources=["rule"],
+                ml_explanation=None,
                 event=event,
             )
         ]
@@ -69,8 +68,8 @@ class RulesEngine:
                     severity="critical",
                     title="Privileged action from unseen country",
                     description="A privileged API action originated from a country not previously observed for this identity.",
-                    anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else 0.97,
-                    confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.91,
+                    anomaly_score=0.97,
+                    confidence=0.91,
                     reasons=[
                         f"Privileged action {event.api_action}",
                         f"New country for user: {event.geo_country}",
@@ -83,6 +82,7 @@ class RulesEngine:
                     ],
                     feature_context=features.model_dump(mode="json"),
                     detection_sources=["rule"],
+                    ml_explanation=None,
                     event=event,
                 )
             ]
@@ -104,8 +104,8 @@ class RulesEngine:
                 severity="high",
                 title="Deletion activity spike",
                 description="Resource deletion velocity exceeded the expected local baseline for the account.",
-                anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else min(0.98, 0.45 + features.account_delete_actions_10m * 0.1),
-                confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.79,            
+                anomaly_score=min(0.98, 0.45 + features.account_delete_actions_10m * 0.1),
+                confidence=0.79,
                 reasons=[
                     f"{features.account_delete_actions_10m} delete or terminate actions in 10 minutes",
                     f"Account {event.account_id}",
@@ -118,6 +118,7 @@ class RulesEngine:
                 ],
                 feature_context=features.model_dump(mode="json"),
                 detection_sources=["rule"],
+                ml_explanation=None,
                 event=event,
             )
         ]
@@ -135,8 +136,8 @@ class RulesEngine:
                 severity="medium",
                 title="High-volume data access",
                 description="An unusually large data transfer was observed for a single event.",
-                anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else 0.84,
-                confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.72,
+                anomaly_score=0.84,
+                confidence=0.72,
                 reasons=[
                     f"{event.bytes_received} bytes received",
                     f"API action {event.api_action}",
@@ -148,6 +149,7 @@ class RulesEngine:
                 ],
                 feature_context=features.model_dump(mode="json"),
                 detection_sources=["rule"],
+                ml_explanation=None,
                 event=event,
             )
         ]
@@ -158,18 +160,27 @@ class RulesEngine:
         features: FeatureSnapshot,
         model_score: ModelScore,
     ) -> AlertCreate | None:
-        if not model_score.predicted_anomaly or model_score.anomaly_score < 0.82:
+        effective_score = self._effective_ml_score(features, model_score)
+        if not model_score.predicted_anomaly or effective_score < self._ml_alert_threshold(features):
             return None
 
-        severity = "high" if model_score.anomaly_score >= 0.92 else "medium"
+        severity = "high" if effective_score >= 0.6 else "medium"
         reasons = [
             f"Isolation Forest anomaly score: {model_score.anomaly_score}",
-            f"Top contributors: {', '.join(model_score.top_contributors)}",
+            model_score.explanation,
         ]
         if features.is_new_country_for_user:
             reasons.append(f"New country observed for user: {event.geo_country}")
         if features.is_new_ip_for_user:
             reasons.append(f"New IP observed for user: {event.source_ip}")
+        if features.account_service_entropy_1h >= 1.4:
+            reasons.append(
+                f"Broad account service spread in 1 hour: {features.account_service_entropy_1h}"
+            )
+        if features.distinct_countries_24h >= 3:
+            reasons.append(
+                f"User has touched {features.distinct_countries_24h} countries in 24 hours"
+            )
 
         return AlertCreate(
             severity=severity,
@@ -188,6 +199,7 @@ class RulesEngine:
             ml_confidence=model_score.confidence,
             model_version=model_score.model_version,
             ml_top_contributors=model_score.top_contributors,
+            ml_explanation=model_score.explanation,
             event=event,
         )
 
@@ -203,12 +215,61 @@ class RulesEngine:
                 alert.reasons.append(
                     f"ML contributors: {', '.join(model_score.top_contributors)}"
                 )
+            if model_score.explanation:
+                alert.reasons.append(model_score.explanation)
         alert.detection_sources = sources
-        # if model_score.model_version != "unavailable":
-        #     alert.anomaly_score = model_score.anomaly_score
-        #     alert.confidence = model_score.confidence
+        if model_score.model_version != "unavailable":
+            original_severity = alert.severity
+            calibrated_severity = self._hybrid_severity(alert.severity, model_score)
+            if calibrated_severity != original_severity:
+                alert.reasons.append(
+                    f"Hybrid severity adjusted from {original_severity} to {calibrated_severity} based on model corroboration."
+                )
+                alert.severity = calibrated_severity
+            alert.anomaly_score = model_score.anomaly_score
+            alert.confidence = model_score.confidence
         alert.ml_anomaly_score = model_score.anomaly_score
         alert.ml_confidence = model_score.confidence
         alert.model_version = model_score.model_version
         alert.ml_top_contributors = model_score.top_contributors
+        alert.ml_explanation = model_score.explanation
         return alert
+
+    def _ml_alert_threshold(self, features: FeatureSnapshot) -> float:
+        threshold = 0.54
+        if features.is_new_country_for_user:
+            threshold -= 0.03
+        if features.is_new_ip_for_user:
+            threshold -= 0.02
+        if features.account_service_entropy_1h >= 1.4:
+            threshold -= 0.02
+        if features.distinct_countries_24h >= 3:
+            threshold -= 0.01
+        return max(0.48, threshold)
+
+    def _effective_ml_score(
+        self,
+        features: FeatureSnapshot,
+        model_score: ModelScore,
+    ) -> float:
+        bonus = 0.0
+        if features.is_new_country_for_user:
+            bonus += 0.03
+        if features.is_new_ip_for_user:
+            bonus += 0.02
+        if features.account_service_entropy_1h >= 1.4:
+            bonus += 0.02
+        if features.distinct_countries_24h >= 3:
+            bonus += 0.01
+        return min(0.99, model_score.anomaly_score + bonus)
+
+    def _hybrid_severity(self, base_severity: str, model_score: ModelScore) -> str:
+        levels = ["low", "medium", "high", "critical"]
+        index = levels.index(base_severity)
+        if not model_score.predicted_anomaly:
+            return base_severity
+        if model_score.anomaly_score >= 0.64:
+            index = min(index + 2, len(levels) - 1)
+        elif model_score.anomaly_score >= 0.56:
+            index = min(index + 1, len(levels) - 1)
+        return levels[index]

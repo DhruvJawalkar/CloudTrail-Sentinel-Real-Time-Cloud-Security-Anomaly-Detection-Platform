@@ -8,7 +8,9 @@ Current implementation:
 - per-user counters for failed logins, request volume, privileged actions, and recent identity spread
 - per-IP features for shared user activity and failed auth rate
 - per-account features for deletion bursts, service mix entropy, and bytes received
+- optional offline Delta sink for persisting per-event feature rows during stream processing
 
 Primary entry point:
 
 - `redis_store.py` exposes `RedisFeatureStore.ingest_event()`, which updates state and returns a `FeatureSnapshot`
+- `offline_delta.py` exposes `OfflineDeltaFeatureStore`, which batches event feature rows into a Delta table for offline training and replayable historical analysis

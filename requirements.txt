@@ -7,3 +7,5 @@ pydantic==2.10.3
 pandas==2.2.3
 redis==5.2.1
 scikit-learn==1.5.2
+deltalake==0.20.2
+pyarrow==18.1.0

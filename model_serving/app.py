@@ -33,3 +33,8 @@ def reload_model() -> ModelMetadata:
 @app.post("/score", response_model=ModelScore)
 def score_features(features: FeatureSnapshot) -> ModelScore:
     return service.score(features)
+
+
+@app.get("/metrics")
+def metrics() -> dict[str, object]:
+    return service.get_metrics()

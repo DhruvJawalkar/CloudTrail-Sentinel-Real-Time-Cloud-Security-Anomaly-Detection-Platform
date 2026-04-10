@@ -1,35 +1,79 @@
 from __future__ import annotations
 
+import ipaddress
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 Severity = Literal["low", "medium", "high", "critical"]
 
 
 class SecurityEvent(BaseModel):
-    event_id: str
+    event_id: str = Field(min_length=1)
     timestamp: datetime
     cloud_provider: Literal["aws", "azure", "gcp"]
-    account_id: str
-    user_id: str
+    account_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
     principal_type: Literal["human", "service_account", "root"]
     source_ip: str
-    geo_country: str
-    region: str
-    service_name: str
-    api_action: str
-    resource_type: str
-    resource_id: str
+    geo_country: str = Field(min_length=2, max_length=2)
+    region: str = Field(min_length=1)
+    service_name: str = Field(min_length=1)
+    api_action: str = Field(min_length=1)
+    resource_type: str = Field(min_length=1)
+    resource_id: str = Field(min_length=1)
     auth_result: Literal["success", "failure"]
-    bytes_sent: int = 0
-    bytes_received: int = 0
-    device_fingerprint: str
-    user_agent: str
+    bytes_sent: int = Field(default=0, ge=0)
+    bytes_received: int = Field(default=0, ge=0)
+    device_fingerprint: str = Field(min_length=1)
+    user_agent: str = Field(min_length=1)
     is_privileged_action: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator(
+        "event_id",
+        "account_id",
+        "user_id",
+        "region",
+        "service_name",
+        "api_action",
+        "resource_type",
+        "resource_id",
+        "device_fingerprint",
+        "user_agent",
+    )
+    @classmethod
+    def validate_non_empty_string(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("geo_country")
+    @classmethod
+    def validate_geo_country(cls, value: str) -> str:
+        value = value.strip().upper()
+        if len(value) != 2 or not value.isalpha():
+            raise ValueError("must be a 2-letter country code")
+        return value
+
+    @field_validator("source_ip")
+    @classmethod
+    def validate_source_ip(cls, value: str) -> str:
+        value = value.strip()
+        try:
+            ipaddress.ip_address(value)
+        except ValueError as exc:
+            raise ValueError("must be a valid IPv4 or IPv6 address") from exc
+        return value
+
+    @model_validator(mode="after")
+    def validate_timestamp(self) -> "SecurityEvent":
+        if self.timestamp.tzinfo is None:
+            raise ValueError("timestamp must be timezone-aware")
+        return self
 
 
 class FeatureSnapshot(BaseModel):
@@ -57,6 +101,7 @@ class ModelScore(BaseModel):
     predicted_anomaly: bool = False
     model_version: str = "unavailable"
     top_contributors: list[str] = Field(default_factory=list)
+    explanation: str = ""
 
 
 class ModelMetadata(BaseModel):
@@ -67,11 +112,15 @@ class ModelMetadata(BaseModel):
     contamination: float = 0.0
     artifact_present: bool = False
     trained_at: str | None = None
+    observed_anomaly_fraction: float = 0.0
+    scenario_breakdown: dict[str, dict[str, float]] = Field(default_factory=dict)
+    anomaly_score_percentiles: dict[str, float] = Field(default_factory=dict)
 
 
 class Alert(BaseModel):
     alert_id: str
     created_at: datetime
+    last_seen_at: datetime | None = None
     severity: Severity
     title: str
     description: str
@@ -85,6 +134,8 @@ class Alert(BaseModel):
     ml_confidence: float | None = None
     model_version: str | None = None
     ml_top_contributors: list[str] = Field(default_factory=list)
+    ml_explanation: str | None = None
+    suppression_count: int = 0
     event: SecurityEvent
 
 
@@ -102,4 +153,28 @@ class AlertCreate(BaseModel):
     ml_confidence: float | None = None
     model_version: str | None = None
     ml_top_contributors: list[str] = Field(default_factory=list)
+    ml_explanation: str | None = None
     event: SecurityEvent
+
+
+class DeadLetterCreate(BaseModel):
+    failed_at: datetime
+    source_topic: str
+    stage: str
+    error_type: str
+    error_message: str
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+    event_id: str | None = None
+    retryable: bool = False
+
+
+class DeadLetter(BaseModel):
+    dead_letter_id: str
+    failed_at: datetime
+    source_topic: str
+    stage: str
+    error_type: str
+    error_message: str
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+    event_id: str | None = None
+    retryable: bool = False

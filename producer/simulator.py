@@ -79,6 +79,7 @@ class EventSimulator:
                 "privileged-new-country",
                 "data-exfiltration-spike",
                 "delete-burst",
+                "low-and-slow-lateral-movement",
             ]
         )
         user_id, principal_type = random.choice(USERS)
@@ -106,6 +107,14 @@ class EventSimulator:
             country = self.user_home_country[user_id]
             region = "us-east-1"
             bytes_received = random.randint(2_000_000, 8_000_000)
+            privileged = False
+        elif scenario == "low-and-slow-lateral-movement":
+            service_name = random.choice(["kms", "ec2", "s3"])
+            api_action = random.choice(["Decrypt", "DescribeInstances", "ListBuckets"])
+            auth_result = "success"
+            country = random.choice([c for c in COUNTRIES if c != self.user_home_country[user_id]])
+            region = random.choice(["eu-west-1", "ap-south-1"])
+            bytes_received = random.randint(150_000, 900_000)
             privileged = False
         else:
             service_name = random.choice(["s3", "ec2", "kms"])
@@ -151,4 +160,3 @@ class EventSimulator:
             "ec2": "instance",
             "kms": "key",
         }[service_name]
-

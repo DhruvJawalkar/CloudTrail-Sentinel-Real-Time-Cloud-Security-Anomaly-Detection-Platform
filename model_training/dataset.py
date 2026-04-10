@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+from deltalake import DeltaTable
 
 from feature_store.memory_store import InMemoryFeatureStore
 from producer.simulator import EventSimulator
+from shared.models import FeatureSnapshot, SecurityEvent
 
 
 def build_training_dataframe(num_events: int = 5000) -> pd.DataFrame:
@@ -16,23 +18,42 @@ def build_training_dataframe(num_events: int = 5000) -> pd.DataFrame:
     for _ in range(num_events):
         event = simulator.next_event()
         features = feature_store.ingest_event(event)
-        rows.append(
-            {
-                "event_id": event.event_id,
-                "timestamp": event.timestamp.isoformat(),
-                "account_id": event.account_id,
-                "user_id": event.user_id,
-                "source_ip": event.source_ip,
-                "service_name": event.service_name,
-                "api_action": event.api_action,
-                "scenario": event.metadata.get("scenario", "unknown"),
-                "is_privileged_action": int(event.is_privileged_action),
-                "auth_failure": int(event.auth_result == "failure"),
-                **features.model_dump(mode="json"),
-            }
-        )
+        rows.append(build_feature_row(event, features))
 
     return pd.DataFrame(rows)
+
+
+def build_training_dataframe_from_delta(
+    delta_path: str,
+    limit: int | None = None,
+) -> pd.DataFrame:
+    table = DeltaTable(delta_path)
+    df = table.to_pandas()
+    if limit is not None:
+        df = df.tail(limit).reset_index(drop=True)
+    return df
+
+
+def build_feature_row(event: SecurityEvent, features: FeatureSnapshot) -> dict[str, Any]:
+    event_date = event.timestamp.date().isoformat()
+    return {
+        "event_id": event.event_id,
+        "timestamp": event.timestamp.isoformat(),
+        "event_date": event_date,
+        "cloud_provider": event.cloud_provider,
+        "account_id": event.account_id,
+        "user_id": event.user_id,
+        "source_ip": event.source_ip,
+        "geo_country": event.geo_country,
+        "region": event.region,
+        "service_name": event.service_name,
+        "api_action": event.api_action,
+        "principal_type": event.principal_type,
+        "scenario": event.metadata.get("scenario", "unknown"),
+        "is_privileged_action": int(event.is_privileged_action),
+        "auth_failure": int(event.auth_result == "failure"),
+        **features.model_dump(mode="json"),
+    }
 
 
 FEATURE_COLUMNS = [

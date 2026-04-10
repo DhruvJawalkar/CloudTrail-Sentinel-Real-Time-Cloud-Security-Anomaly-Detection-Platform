@@ -6,7 +6,7 @@ Current implementation:
 
 - `app.py` provides a FastAPI scoring API
 - `service.py` loads the Isolation Forest artifact and metadata
-- `/score` returns anomaly score, confidence, model version, and top contributor hints
+- `/score` returns anomaly score, confidence, model version, top contributor hints, and a short explanation string
 
 Expected workflow:
 
@@ -17,5 +17,5 @@ Expected workflow:
 Useful endpoints:
 
 - `/health` for readiness and artifact presence
-- `/metadata` for model version and training metadata
+- `/metadata` for model version, anomaly score percentiles, and scenario-level evaluation metadata
 - `/reload` to force the service to reload the current artifact files

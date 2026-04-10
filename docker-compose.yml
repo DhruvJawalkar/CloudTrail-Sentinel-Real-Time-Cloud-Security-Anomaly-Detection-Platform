@@ -79,11 +79,16 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       RAW_EVENTS_TOPIC: cloud-security-events
+      DEAD_LETTER_TOPIC: cloud-security-events-dlq
       ALERT_API_BASE_URL: http://api:8000
       MODEL_API_BASE_URL: http://model_serving:8010
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
+      STREAM_PROCESSOR_METRICS_PORT: 9101
+      RAW_EVENT_ARCHIVE_PATH: data/raw_events.jsonl
+      OFFLINE_FEATURES_DELTA_PATH: data/offline_features_delta
+      OFFLINE_FEATURES_FLUSH_ROWS: 50
     depends_on:
       model_serving:
         condition: service_healthy
@@ -93,6 +98,10 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
+    ports:
+      - "9101:9101"
+    volumes:
+      - ./data:/app/data
 
   producer:
     build:
@@ -113,6 +122,8 @@ services:
       dockerfile: dashboard/Dockerfile
     environment:
       API_BASE_URL: http://api:8000
+      MODEL_API_BASE_URL: http://model_serving:8010
+      STREAM_PROCESSOR_METRICS_URL: http://stream_processor:9101/metrics
     depends_on:
       api:
         condition: service_healthy

@@ -25,4 +25,6 @@ Metadata includes:
 - training row count
 - contamination setting
 - observed anomaly fraction
+- anomaly score percentiles from the training set
+- per-scenario anomaly counts and anomaly rates
 - feature medians and standard deviations used for explanation hints

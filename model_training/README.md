@@ -10,4 +10,19 @@ Current implementation:
 
 Typical usage:
 
-- `python -m model_training.train`
+- `py -3 -m model_training.train`
+- `py -3 -m model_training.train --num-events 8000 --contamination 0.06`
+
+Artifacts are written to:
+
+- `model_training/artifacts/isolation_forest.pkl`
+- `model_training/artifacts/metadata.json`
+- `model_training/artifacts/training_dataset.csv`
+
+Metadata includes:
+
+- model version
+- training row count
+- contamination setting
+- observed anomaly fraction
+- feature medians and standard deviations used for explanation hints

@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from model_training.dataset import FEATURE_COLUMNS
-from shared.models import FeatureSnapshot, ModelScore
+from shared.models import FeatureSnapshot, ModelMetadata, ModelScore
 
 ARTIFACTS_DIR = Path("model_training/artifacts")
 MODEL_PATH = ARTIFACTS_DIR / "isolation_forest.pkl"
@@ -46,11 +46,32 @@ class ModelScoringService:
         )
 
     def _load(self) -> None:
+        self.model = None
+        self.metadata = {}
         if not MODEL_PATH.exists() or not METADATA_PATH.exists():
             return
         with MODEL_PATH.open("rb") as handle:
             self.model = pickle.load(handle)
         self.metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
+
+    def reload(self) -> ModelMetadata:
+        self._load()
+        return self.get_metadata()
+
+    def get_metadata(self) -> ModelMetadata:
+        return ModelMetadata(
+            model_type=str(self.metadata.get("model_type", "IsolationForest")),
+            model_version=str(self.metadata.get("model_version", "unavailable")),
+            feature_columns=list(self.metadata.get("feature_columns", [])),
+            training_rows=int(self.metadata.get("training_rows", 0)),
+            contamination=float(self.metadata.get("contamination", 0.0)),
+            artifact_present=bool(self.model is not None),
+            trained_at=(
+                str(self.metadata.get("trained_at"))
+                if self.metadata.get("trained_at") is not None
+                else None
+            ),
+        )
 
     def _to_frame(self, features: FeatureSnapshot) -> pd.DataFrame:
         values = features.model_dump(mode="json")

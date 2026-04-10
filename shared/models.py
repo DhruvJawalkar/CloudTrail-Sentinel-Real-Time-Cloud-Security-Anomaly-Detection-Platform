@@ -47,6 +47,8 @@ class FeatureSnapshot(BaseModel):
     account_bytes_received_1h: int = 0
     is_new_country_for_user: bool = False
     is_new_ip_for_user: bool = False
+    is_privileged_action: bool = False
+    auth_failure: bool = False
 
 
 class ModelScore(BaseModel):
@@ -55,6 +57,16 @@ class ModelScore(BaseModel):
     predicted_anomaly: bool = False
     model_version: str = "unavailable"
     top_contributors: list[str] = Field(default_factory=list)
+
+
+class ModelMetadata(BaseModel):
+    model_type: str = "IsolationForest"
+    model_version: str = "unavailable"
+    feature_columns: list[str] = Field(default_factory=list)
+    training_rows: int = 0
+    contamination: float = 0.0
+    artifact_present: bool = False
+    trained_at: str | None = None
 
 
 class Alert(BaseModel):

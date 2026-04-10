@@ -86,6 +86,19 @@ Each alert includes:
 - ML anomaly score and model version
 - full triggering event payload
 
+## Startup Hardening
+
+The local Compose stack now includes healthchecks and dependency gating for Redis, Redpanda, the API, and the model service. The `stream_processor` also waits and retries on startup so it does not crash if Kafka or the model service takes a little longer to become ready.
+
+## Offline Training Workflow
+
+Model training is intentionally separate from `model_serving`.
+
+- Run `py -3 -m model_training.train` during local development to generate artifacts directly under `model_training/artifacts/`
+- `model_serving` now mounts `./model_training/artifacts` directly in Docker Compose, so freshly trained local artifacts are used without rebuilding the image
+- If artifacts are missing, `model_serving` starts in a degraded state and reports that through `/health`
+- `model_serving` also exposes `/metadata` and `/reload` for inspecting or reloading the currently available artifact
+
 ## Local run
 
 ### Option 1: Docker Compose
@@ -128,17 +141,35 @@ python -m stream_processor.app
 python -m producer.app
 ```
 
-6. Train the model:
+6. Train the model locally so artifacts are written into the repo:
 
 ```bash
-python -m model_training.train
+py -3 -m model_training.train
 ```
+
+Optional tuning:
+
+```bash
+py -3 -m model_training.train --num-events 8000 --contamination 0.06
+```
+
+This creates:
+
+- `model_training/artifacts/isolation_forest.pkl`
+- `model_training/artifacts/metadata.json`
+- `model_training/artifacts/training_dataset.csv`
 
 7. Run the model service:
 
 ```bash
 uvicorn model_serving.app:app --reload --port 8010
 ```
+
+Useful endpoints:
+
+- `http://localhost:8010/health`
+- `http://localhost:8010/metadata`
+- `http://localhost:8010/reload`
 
 8. Run the dashboard:
 

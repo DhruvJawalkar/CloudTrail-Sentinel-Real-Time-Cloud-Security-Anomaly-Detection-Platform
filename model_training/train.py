@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import pickle
 from datetime import datetime, timezone
@@ -16,7 +17,7 @@ METADATA_PATH = ARTIFACTS_DIR / "metadata.json"
 DATASET_PATH = ARTIFACTS_DIR / "training_dataset.csv"
 
 
-def train_model(num_events: int = 5000) -> dict[str, str]:
+def train_model(num_events: int = 5000, contamination: float = 0.08) -> dict[str, str]:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     df = build_training_dataframe(num_events=num_events)
     df.to_csv(DATASET_PATH, index=False)
@@ -24,10 +25,12 @@ def train_model(num_events: int = 5000) -> dict[str, str]:
     X = _prepare_features(df)
     model = IsolationForest(
         n_estimators=200,
-        contamination=0.08,
+        contamination=contamination,
         random_state=42,
     )
     model.fit(X)
+    predictions = model.predict(X)
+    anomaly_fraction = float((predictions == -1).mean())
 
     medians = {column: float(X[column].median()) for column in FEATURE_COLUMNS}
     stds = {
@@ -43,7 +46,9 @@ def train_model(num_events: int = 5000) -> dict[str, str]:
         "model_version": datetime.now(timezone.utc).strftime("iforest-%Y%m%d%H%M%S"),
         "feature_columns": FEATURE_COLUMNS,
         "training_rows": len(df),
-        "contamination": 0.08,
+        "contamination": contamination,
+        "observed_anomaly_fraction": anomaly_fraction,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
         "medians": medians,
         "stds": stds,
     }
@@ -53,6 +58,8 @@ def train_model(num_events: int = 5000) -> dict[str, str]:
         "metadata_path": str(METADATA_PATH),
         "dataset_path": str(DATASET_PATH),
         "model_version": metadata["model_version"],
+        "training_rows": str(len(df)),
+        "contamination": str(contamination),
     }
 
 
@@ -65,5 +72,19 @@ def _prepare_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    result = train_model()
+    parser = argparse.ArgumentParser(description="Train the CloudTrail Sentinel Isolation Forest model.")
+    parser.add_argument(
+        "--num-events",
+        type=int,
+        default=5000,
+        help="Number of simulated events to generate for training.",
+    )
+    parser.add_argument(
+        "--contamination",
+        type=float,
+        default=0.08,
+        help="Expected anomaly fraction for Isolation Forest.",
+    )
+    args = parser.parse_args()
+    result = train_model(num_events=args.num_events, contamination=args.contamination)
     print(json.dumps(result, indent=2))

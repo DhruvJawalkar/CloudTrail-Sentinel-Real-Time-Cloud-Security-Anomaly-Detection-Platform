@@ -128,7 +128,7 @@ class AlertRepository:
                     detection_sources_json, ml_anomaly_score, ml_confidence,
                     model_version, ml_top_contributors_json, event_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     alert.alert_id,

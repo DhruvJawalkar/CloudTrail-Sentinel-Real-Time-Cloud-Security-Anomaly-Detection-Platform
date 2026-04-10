@@ -88,6 +88,8 @@ class RedisFeatureStore:
             ),
             is_new_country_for_user=bool(had_country_history and not prior_country_seen),
             is_new_ip_for_user=bool(had_ip_history and not prior_ip_seen),
+            is_privileged_action=event.is_privileged_action,
+            auth_failure=bool(event.auth_result == "failure"),
         )
 
     def _track_request(self, event: SecurityEvent, event_ts: int) -> None:

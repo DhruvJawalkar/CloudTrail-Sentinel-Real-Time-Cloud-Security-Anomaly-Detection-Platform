@@ -3,6 +3,12 @@ services:
     image: redis:7.4-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
@@ -19,6 +25,12 @@ services:
       - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
     ports:
       - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster info --brokers=localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   api:
     build:
@@ -30,13 +42,35 @@ services:
       - ./data:/app/data
     ports:
       - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   model_serving:
     build:
       context: .
       dockerfile: model_serving/Dockerfile
+    volumes:
+      - ./model_training/artifacts:/app/model_training/artifacts
     ports:
       - "8010:8010"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   stream_processor:
     build:
@@ -51,10 +85,14 @@ services:
       REDIS_PORT: 6379
       REDIS_DB: 0
     depends_on:
-      - model_serving
-      - redis
-      - redpanda
-      - api
+      model_serving:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      api:
+        condition: service_healthy
 
   producer:
     build:
@@ -66,7 +104,8 @@ services:
       EVENT_GENERATION_RATE: 8
       EVENT_GENERATION_BURST_PROBABILITY: 0.08
     depends_on:
-      - redpanda
+      redpanda:
+        condition: service_healthy
 
   dashboard:
     build:
@@ -75,6 +114,7 @@ services:
     environment:
       API_BASE_URL: http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "8501:8501"

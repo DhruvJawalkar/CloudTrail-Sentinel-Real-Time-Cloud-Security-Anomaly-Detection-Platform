@@ -39,8 +39,8 @@ class RulesEngine:
                 severity="high",
                 title="Failed login burst detected",
                 description="Multiple failed console login attempts observed in a short window.",
-                anomaly_score=min(0.99, 0.5 + features.failed_logins_5m * 0.08),
-                confidence=0.86,
+                anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else min(0.99, 0.5 + features.failed_logins_5m * 0.08),
+                confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.86,
                 reasons=[
                     f"{features.failed_logins_5m} failed console logins in the last 5 minutes",
                     f"Source country {event.geo_country}",
@@ -69,8 +69,8 @@ class RulesEngine:
                     severity="critical",
                     title="Privileged action from unseen country",
                     description="A privileged API action originated from a country not previously observed for this identity.",
-                    anomaly_score=0.97,
-                    confidence=0.91,
+                    anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else 0.97,
+                    confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.91,
                     reasons=[
                         f"Privileged action {event.api_action}",
                         f"New country for user: {event.geo_country}",
@@ -104,8 +104,8 @@ class RulesEngine:
                 severity="high",
                 title="Deletion activity spike",
                 description="Resource deletion velocity exceeded the expected local baseline for the account.",
-                anomaly_score=min(0.98, 0.45 + features.account_delete_actions_10m * 0.1),
-                confidence=0.79,
+                anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else min(0.98, 0.45 + features.account_delete_actions_10m * 0.1),
+                confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.79,            
                 reasons=[
                     f"{features.account_delete_actions_10m} delete or terminate actions in 10 minutes",
                     f"Account {event.account_id}",
@@ -135,8 +135,8 @@ class RulesEngine:
                 severity="medium",
                 title="High-volume data access",
                 description="An unusually large data transfer was observed for a single event.",
-                anomaly_score=0.84,
-                confidence=0.72,
+                anomaly_score= model_score.anomaly_score if model_score.model_version != "unavailable" else 0.84,
+                confidence= model_score.confidence if model_score.model_version != "unavailable" else 0.72,
                 reasons=[
                     f"{event.bytes_received} bytes received",
                     f"API action {event.api_action}",
@@ -197,13 +197,16 @@ class RulesEngine:
         model_score: ModelScore,
     ) -> AlertCreate:
         sources = list(alert.detection_sources)
-        if model_score.predicted_anomaly:
+        if model_score.predicted_anomaly and "ml" not in sources:
             sources.append("ml")
             if model_score.top_contributors:
                 alert.reasons.append(
                     f"ML contributors: {', '.join(model_score.top_contributors)}"
                 )
         alert.detection_sources = sources
+        # if model_score.model_version != "unavailable":
+        #     alert.anomaly_score = model_score.anomaly_score
+        #     alert.confidence = model_score.confidence
         alert.ml_anomaly_score = model_score.anomaly_score
         alert.ml_confidence = model_score.confidence
         alert.model_version = model_score.model_version
